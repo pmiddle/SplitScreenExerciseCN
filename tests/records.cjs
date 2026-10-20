@@ -1,0 +1,7 @@
+'use strict';
+const assert=require('node:assert/strict'),R=require('../records.js');
+const values=new Map(),storage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)};
+const j=new R.Journal(storage),a={url:'https://www.bilibili.com/video/BV1VTddBHEDE/',title:'帕梅拉三部曲',platform:'Bilibili'},b={url:'https://youtu.be/M7lc1UVf-VE',title:'我的锻炼',platform:'YouTube'};
+j.select([a,b,a]);assert.equal(j.pending.length,2);assert.equal(new R.Journal(storage).pending.length,2);assert.throws(()=>j.add('2026-02-30',[a.url]));assert.throws(()=>j.add('2026-10-19',[]));j.add('2026-10-19',[b.url]);assert.equal(j.records[0].items.length,1);assert.equal(j.records[0].items[0].title,'我的锻炼');assert.equal(j.pending.length,1);const restored=new R.Journal(storage);assert.equal(restored.records[0].date,'2026-10-19');assert.equal(restored.pending[0].title,'帕梅拉三部曲');const csv=R.csv(restored.records);assert(csv.startsWith('\ufeff'));assert(csv.includes('日期'));assert(csv.includes('2026-10-19'));assert(csv.includes('我的锻炼'));assert(!csv.includes('帕梅拉三部曲'));assert(R.csv([{date:'2026-10-19',items:[{title:'=danger,"quote"',url:'url',platform:'Bilibili'}]}]).includes("'=danger,"));
+const failing=new R.Journal({getItem:()=>null,setItem:()=>{throw Error('blocked')}});failing.select([a]);failing.add('2026-10-19',[a.url]);assert(failing.failed);assert.equal(failing.records.length,1);
+console.log('PASS: selected-only recording, URL deduplication, local persistence/reopen, pending preservation, dates, CSV contents/quoting and storage failure.');
