@@ -6,7 +6,7 @@ const yt='M7lc1UVf-VE',bv='BV1B7411m7LV';
 test('URL parsing: HTTPS, no scheme, watch, short, mobile, embed, live, BV and part',()=>{
  for(const url of [`youtube.com/watch?v=${yt}`,`https://youtu.be/${yt}`,`https://m.youtube.com/watch?v=${yt}`,`https://www.youtube.com/shorts/${yt}`,`https://youtube.com/embed/${yt}`,`https://youtube.com/live/${yt}`])assert.equal(parseVideo(url).id,yt);
  assert.deepEqual(parseVideo(`https://www.bilibili.com/video/${bv}/?p=2`),{platform:'Bilibili',id:bv,p:'2'});
- for(const url of ['', 'javascript:alert(1)',`https://youtube.com.evil.test/watch?v=${yt}`,`https://youtube.com@evil.test/watch?v=${yt}`,`https://user:pass@youtube.com/watch?v=${yt}`,'https://www.youtube.com/watch?v=short','https://b23.tv/no','https://bilibili.com/video/no'])assert.throws(()=>parseVideo(url));
+ for(const url of ['', 'javascript:alert(1)',`https://youtube.com.evil.test/watch?v=${yt}`,`https://youtube.com@evil.test/watch?v=${yt}`,`https://user:pass@youtube.com/watch?v=${yt}`,'https://www.youtube.com/watch?v=short','https://bilibili.com/video/no'])assert.throws(()=>parseVideo(url));
 });
 test('Bilibili share text, punctuation, BV/av numbers and multiline import',()=>{
  assert.equal(parseVideo('【分享标题】https://www.bilibili.com/video/'+bv+'/。').id,bv);
@@ -14,7 +14,7 @@ test('Bilibili share text, punctuation, BV/av numbers and multiline import',()=>
  assert.equal(parseVideo('av170001').aid,'170001');assert.equal(new URL(bilibiliURL(parseVideo('av170001'),true)).searchParams.get('aid'),'170001');
  const items=parseImport('【运动标题】\nhttps://www.bilibili.com/video/'+bv+'/\n'+bv+'\nhttps://youtu.be/'+yt);assert.equal(items.length,3);assert.equal(items[2].platform,'YouTube');
  assert.equal(parseImport('av170001 '+bv).length,2);
- assert.throws(()=>parseImport('【分享】https://b23.tv/abc'),/短链/);
+ assert.equal(parseImport('【分享】https://b23.tv/abc')[0].shortUrl,'https://b23.tv/abc');
  assert.throws(()=>parseImport('https://evil.test/video/'+bv));
  assert.throws(()=>parseImport(Array(101).fill(bv).join('\n')),/100/);
 });

@@ -9,17 +9,21 @@
  const ROLES={workout:'锻炼',entertainment:'娱乐'};
  const unsupported=Object.freeze({canPlayProgrammatically:false,canPauseProgrammatically:false,canMuteProgrammatically:false,canSetVolume:false,canGetCurrentTime:false,canDetectEnded:false,canSeek:false});
  function parseVideo(text){
-  const textValue=text.trim();const av=textValue.match(/^av([1-9]\d*)$/i);if(av)return {platform:'Bilibili',id:'av'+av[1],aid:av[1],p:null};const bv=textValue.match(/^BV[0-9A-Za-z]{10}$/i);if(bv)return {platform:'Bilibili',id:'BV'+textValue.slice(2),p:null};
-  const matched=textValue.match(/https?:\/\/[^\s<>"'【】《》]+/i);const raw=(matched?matched[0]:textValue).replace(/[，。；！？、）)\]》】]+$/u,'');const u=new URL(/^https?:\/\//i.test(raw)?raw:'https://'+raw);
+  const textValue=text.trim().replace(/[\u200B-\u200D\uFEFF]/g,'');const av=textValue.match(/^av([1-9]\d*)$/i);if(av)return {platform:'Bilibili',id:'av'+av[1],aid:av[1],p:null};const bv=textValue.match(/^BV[0-9A-Za-z]{10}$/i);if(bv)return {platform:'Bilibili',id:'BV'+textValue.slice(2),p:null};
+  if(!/https?:\/\//i.test(textValue)){const embedded=textValue.match(/\b(BV[0-9A-Za-z]{10}|av[1-9]\d*)\b/i);if(embedded&&embedded[0]!==textValue&&!/bilibili:\/\//i.test(textValue))return parseVideo(embedded[0]);}
+  const matched=textValue.match(/(?:https?|bilibili):\/\/[^\s<>"'【】《》]+/i);const raw=(matched?matched[0]:textValue).replace(/[，。；！？、）)\]》】,;!.]+$/u,'');const u=new URL(/^(?:https?|bilibili):\/\//i.test(raw)?raw:raw.startsWith('//')?'https:'+raw:'https://'+raw);
+  if(u.protocol==='bilibili:'){const id=u.searchParams.get('bvid')||u.pathname.split('/').filter(Boolean).pop()||u.hostname;if(/^BV[0-9A-Za-z]{10}$/i.test(id))return parseVideo(id);const aid=u.searchParams.get('aid')||id;if(/^(?:av)?[1-9]\d*$/i.test(aid))return parseVideo('av'+aid.replace(/^av/i,''));throw Error('unsupported Bilibili app link');}
   if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw Error('invalid URL');
   const host=u.hostname.toLowerCase();let id;
+  if(['b23.tv','www.b23.tv','bili2233.cn','www.bili2233.cn'].includes(host)){if(!/^\/[A-Za-z0-9_-]+\/?$/.test(u.pathname))throw Error('invalid short URL');u.protocol='https:';return {platform:'Bilibili',id:null,shortUrl:u.href,originalUrl:raw};}
   if(['youtube.com','www.youtube.com','m.youtube.com','youtu.be','www.youtu.be'].includes(host)){
    id=host.endsWith('youtu.be')?u.pathname.split('/')[1]:u.pathname==='/watch'?u.searchParams.get('v'):/^\/(embed|shorts|live)\//.test(u.pathname)?u.pathname.split('/')[2]:null;
    const list=u.searchParams.get('list');const playlistId=list&&/^[A-Za-z0-9_-]{10,100}$/.test(list)?list:null;
    if(!/^[\w-]{11}$/.test(id||'')){if(u.pathname==='/playlist'&&playlistId)return {platform:'YouTube',id:null,playlistId};throw Error('invalid video ID');}
    return playlistId?{platform:'YouTube',id,playlistId}:{platform:'YouTube',id};
   }
-  if(['bilibili.com','www.bilibili.com','m.bilibili.com'].includes(host)){
+  if(['bilibili.com','www.bilibili.com','m.bilibili.com','player.bilibili.com'].includes(host)){
+   const queryId=u.searchParams.get('bvid')||u.searchParams.get('aid');if(queryId){const result=parseVideo(/^\d+$/.test(queryId)?'av'+queryId:queryId);const part=u.searchParams.get('p');if(part&&/^[1-9]\d*$/.test(part))result.p=part;return result;}
    const av=u.pathname.match(/^\/video\/av([1-9]\d*)(?:\/|$)/i);if(av){const p=u.searchParams.get('p');return {platform:'Bilibili',id:'av'+av[1],aid:av[1],p:p&&/^[1-9]\d*$/.test(p)?p:null};}
    id=u.pathname.match(/^\/video\/(BV[0-9A-Za-z]{10})(?:\/|$)/)?.[1];if(!id)throw Error('invalid BV ID');
    const p=u.searchParams.get('p');return {platform:'Bilibili',id,p:p&&/^[1-9]\d*$/.test(p)?p:null};
@@ -29,7 +33,7 @@
  function parseImport(text){
   const tokens=[];
   for(const line of text.split(/\r?\n/)){
-   const urls=line.match(/https?:\/\/[^\s<>"'【】《》]+/gi);
+   const urls=line.match(/(?:(?:https?|bilibili):\/\/|(?:(?:www|m)\.)?(?:b23\.tv|bili2233\.cn|bilibili\.com|youtube\.com|youtu\.be)\/)[^\s<>"'【】《》]+/gi);
    if(urls){tokens.push(...urls);continue;}
    const ids=line.match(/\b(?:BV[0-9A-Za-z]{10}|av[1-9]\d*)\b/gi);
    if(ids){tokens.push(...ids);continue;}
@@ -41,6 +45,15 @@
    if(/(?:https?:\/\/)?(?:www\.)?b23\.tv\//i.test(token))throw Error(`第${index+1}项是B站短链，请打开后复制完整视频网址，或填写BV号。`);
    throw Error(`第${index+1}项无法识别，请填写视频链接或BV号。`);
   }});
+ }
+ const shortCache=new Map();
+ async function resolveVideo(video,fetcher=fetch){
+  if(!video.shortUrl)return video;
+  if(shortCache.has(video.shortUrl))return {...shortCache.get(video.shortUrl),...(video.title?{title:video.title}:{})};
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
+  try{const response=await fetcher(video.shortUrl,{redirect:'follow',credentials:'omit',signal:controller.signal});const resolved=parseVideo(response.url);if(resolved.shortUrl||resolved.platform!=='Bilibili')throw Error('not a video redirect');shortCache.set(video.shortUrl,resolved);return {...resolved,...(video.title?{title:video.title}:{})};}
+  catch{const error=Error('已识别B站短链，但当前浏览器无法展开。请打开短链，再粘贴完整视频地址或BV/av号。');error.shortUrl=video.shortUrl;error.shortOriginal=video.originalUrl||video.shortUrl;throw error;}
+  finally{clearTimeout(timeout);}
  }
  function bilibiliURL(video,muted){const u=new URL('https://player.bilibili.com/player.html');if(video.aid)u.searchParams.set('aid',video.aid);else u.searchParams.set('bvid',video.id);u.searchParams.set('autoplay','0');u.searchParams.set('muted',muted?'1':'0');u.searchParams.set('danmaku','0');if(video.p)u.searchParams.set('p',video.p);return u.href;}
  let ytPromise;
@@ -119,20 +132,20 @@
  function init(){
   const $=id=>document.getElementById(id);const adapters={};let queues={},indices={workout:0,entertainment:0},videos={},mainRole='entertainment',toastTimeout,finishTimeout;const KEY='move-mix-cn:setup:v1';
   function notice(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').hidden=true,6000);$('sessionStatus').textContent=text;}
-  function detect(role){let queue=null;const value=$(role+'Url').value;try{queue=parseImport(value);}catch{}$(role+'Detected').textContent=queue?'已识别 '+queue.length+' 项 · '+[...new Set(queue.map(v=>v.platform))].join(' / '):value.trim()?'待识别：支持分享文字、完整链接或BV号':'可粘贴多条分享文字、链接或BV号，每行一条';return queue;}
+  function detect(role){let queue=null;const value=$(role+'Url').value;try{queue=parseImport(value);}catch{}$(role+'Detected').textContent=queue?'已识别 '+queue.length+' 项'+(queue.some(v=>v.shortUrl)?'（短链将在开始时解析）':'')+' · '+[...new Set(queue.map(v=>v.platform))].join(' / '):value.trim()?'待识别：支持分享文字、完整链接或BV号':'可粘贴多条分享文字、链接或BV号，每行一条';return queue;}
 
   function save(){try{localStorage.setItem(KEY,JSON.stringify({workout:$('workoutUrl').value,entertainment:$('entertainmentUrl').value,muted:$('setupMute').checked}));}catch{}}
-  try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved){$('workoutUrl').value=typeof saved.workout==='string'?saved.workout:'';$('entertainmentUrl').value=typeof saved.entertainment==='string'?saved.entertainment:'';$('setupMute').checked=saved.muted!==false;}}catch{}
+  try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved){$('workoutUrl').value=typeof saved.workout==='string'?saved.workout:'';$('entertainmentUrl').value=typeof saved.entertainment==='string'?saved.entertainment:'';$('setupMute').checked=true;}}catch{}
   for(const role of Object.keys(ROLES)){detect(role);$(role+'Url').addEventListener('input',()=>{detect(role);$(role+'Error').textContent='';$(role+'Url').removeAttribute('aria-invalid');save();});}
   $('setupMute').onchange=save;
   function failure(role,text){$(role+'State').textContent='加载遇到问题';$(role+'Failure').querySelector('p').textContent=text;$(role+'Failure').hidden=false;}
   function mount(role,autoPlay=false){
    document.dispatchEvent(new CustomEvent('cn:before-player-change',{detail:{role}}));
    adapters[role]?.destroy();$(role+'Failure').hidden=true;
-   const video=videos[role];$(role+'Label').textContent=`${role==='workout'?'↗':'♫'} ${ROLES[role]} · ${video.platform}`;
+   const video=videos[role];const external=$(role+'External');external.href=window.MoveMixLibrary.canonical(video);external.textContent=ROLES[role]+' · 在'+(video.platform==='Bilibili'?'B站':'YouTube')+'打开';$(role+'Label').textContent=`${role==='workout'?'↗':'♫'} ${ROLES[role]} · ${video.platform}`;
    const muted=role==='workout'?$('sessionMute').checked:false;
    adapters[role]=createAdapter($(role+'Mount'),video,{role,muted,autoPlay,volume:role==='entertainment'?Number($('entertainmentVolume').value):65,onStatus:text=>$(role+'State').textContent=text,onError:text=>failure(role,text),onNotice:notice,onEnded:()=>{if(indices[role]+1<queues[role].length)changeItem(role,indices[role]+1,true);else notice(`${ROLES[role]}队列已播放完毕。`);},onReady:()=>{if(role==='entertainment')$('entertainmentVolume').disabled=false;}});
-   adapters[role].load();updateQueueUI();document.dispatchEvent(new CustomEvent('cn:player-mounted',{detail:{role,video,beginDuck:()=>beginAudioDuck(adapters.entertainment,active=>{$('entertainmentVolume').disabled=active||!adapters.entertainment?.ready;})}}));if(role==='workout'){$('applyMute').hidden=true;updateMuteHelp();}
+   adapters[role].load();updateQueueUI();document.dispatchEvent(new CustomEvent('cn:player-mounted',{detail:{role,video,beginDuck:beginCountdownCue}}));if(role==='workout'){$('applyMute').hidden=true;updateMuteHelp();}
   }
   function updateQueueUI(){
    for(const role of Object.keys(ROLES)){
@@ -143,8 +156,8 @@
    }
    $('combo').textContent=`${videos.workout.platform} × ${videos.entertainment.platform}`;
    $('entertainmentVolumeRow').hidden=videos.entertainment.platform!=='YouTube';
-   $('platformHelp').hidden=!Object.values(videos).some(v=>v.platform==='Bilibili');
-   $('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。计时仅用视觉提醒，不重载视频。':'';
+   const hasBilibili=Object.values(videos).some(v=>v.platform==='Bilibili');$('platformHelp').hidden=!hasBilibili;$('playBoth').hidden=hasBilibili;$('pauseBoth').hidden=hasBilibili;$('manualPlaybackHint').hidden=!hasBilibili;
+   $('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。计时最后1.5秒使用提示音，不会暂停或重载B站视频。':'';
   }
   function changeItem(role,index,autoPlay=false){
    if(index<0||index>=queues[role].length)return;
@@ -155,19 +168,31 @@
   }
   function updateMuteHelp(){const bili=videos.workout?.platform==='Bilibili';$('muteHelp').textContent=bili?'B站静音设置在加载时生效。修改后需点击重新载入，视频进度会重置。':'YouTube 可直接切换锻炼静音。';}
   function layout(){const small=mainRole==='entertainment'?'workout':'entertainment';$('stage').dataset.main=mainRole;for(const role of Object.keys(ROLES))$(role+'Shell').classList.toggle('small',role===small);}
-  const timer=new QuickTimer({beginDuck:()=>beginAudioDuck(adapters.entertainment,active=>{$('entertainmentVolume').disabled=active||!adapters.entertainment?.ready;}),render:state=>{
-   $('timerChoices').hidden=state.running;$('timerRunning').hidden=!state.running;$('remaining').textContent=state.seconds;$('overlayRemaining').textContent=state.seconds;$('timerOverlay').hidden=!state.running&&!state.finished;$('timerOverlay').classList.toggle('urgent',state.urgent);$('timerOverlay').classList.toggle('finished',state.finished);
-   if(state.finished){$('timerResult').textContent='计时结束';$('overlayRemaining').textContent='完成';clearTimeout(finishTimeout);finishTimeout=setTimeout(()=>$('timerOverlay').hidden=true,2400);$('timerChoices').querySelector('button').focus({preventScroll:true});}
+  let audioContext=null;
+  function prepareCueAudio(){try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;audioContext ||= new Audio();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});}catch{}}
+  function beginCountdownCue(){
+   const releases=Object.values(adapters).map(a=>beginAudioDuck(a,active=>{if(a===adapters.entertainment)$('entertainmentVolume').disabled=active||!a.ready;})).filter(Boolean),tones=[];
+   {
+    if(audioContext?.state==='running'){for(const offset of [0,.5,1]){const oscillator=audioContext.createOscillator(),gain=audioContext.createGain(),t=audioContext.currentTime+offset;oscillator.frequency.value=880;gain.gain.setValueAtTime(0,t);gain.gain.linearRampToValueAtTime(.12,t+.015);gain.gain.linearRampToValueAtTime(0,t+.18);oscillator.connect(gain);gain.connect(audioContext.destination);oscillator.start(t);oscillator.stop(t+.2);tones.push({oscillator,gain});}}
+    else $('timerResult').textContent='浏览器未允许提示音；请留意倒计时高亮。';
+   }
+   return ()=>{for(const release of releases)release();for(const {oscillator,gain} of tones){try{oscillator.stop();}catch{}oscillator.disconnect();gain.disconnect();}};
+  }
+  const timer=new QuickTimer({beginDuck:beginCountdownCue,render:state=>{
+   const select=$('quickTimerSelect');select.options[0].textContent=state.running?'计时 '+state.seconds+'秒':state.finished?'计时完成 · 选择新计时':'选择计时';$('cancelTimerOption').disabled=!state.running;
+   $('overlayRemaining').textContent=state.seconds;$('timerOverlay').hidden=!state.running&&!state.finished;$('timerOverlay').classList.toggle('urgent',state.urgent);$('timerOverlay').classList.toggle('finished',state.finished);
+   if(state.finished){$('timerResult').textContent='计时结束';$('overlayRemaining').textContent='完成';clearTimeout(finishTimeout);finishTimeout=setTimeout(()=>$('timerOverlay').hidden=true,2400);}
   }});
-  document.addEventListener('cn:cue-start',()=>timer.cancel());
-  function startTimer(seconds){document.dispatchEvent(new CustomEvent('cn:quick-start'));if(!Number.isInteger(seconds)||seconds<1||seconds>3600){$('customError').textContent='请输入 1 到 3600 之间的整数秒数。';return;}clearTimeout(finishTimeout);$('timerResult').textContent='';$('customError').textContent='';$('customForm').hidden=true;$('customToggle').setAttribute('aria-expanded','false');timer.start(seconds);$('cancelTimer').focus({preventScroll:true});}
-  $('setupForm').onsubmit=event=>{
-   event.preventDefault();const next={};let firstInvalid;
-   for(const role of Object.keys(ROLES)){try{next[role]=parseImport($(role+'Url').value);$(role+'Error').textContent='';}catch(error){next[role]=null;$(role+'Error').textContent=error.message;}detect(role);$(role+'Url').setAttribute('aria-invalid',String(!next[role]));if(!next[role]&&!firstInvalid)firstInvalid=$(role+'Url');}
-   if(firstInvalid){firstInvalid.focus();return;}timer.cancel();save();queues=next;indices={workout:0,entertainment:0};videos={workout:queues.workout[0],entertainment:queues.entertainment[0]};mainRole='entertainment';layout();$('setupView').hidden=true;$('sessionView').hidden=false;$('sessionMute').checked=$('setupMute').checked;$('combo').textContent=`${videos.workout.platform} × ${videos.entertainment.platform}`;
+  document.addEventListener('cn:cue-start',()=>{prepareCueAudio();timer.cancel();});
+  function startTimer(seconds){if(!Number.isInteger(seconds)||seconds<1||seconds>3600){$('customError').textContent='请输入1–3600之间的整数秒数。';return;}prepareCueAudio();document.dispatchEvent(new CustomEvent('cn:quick-start'));clearTimeout(finishTimeout);$('timerResult').textContent='';$('customError').textContent='';$('customForm').hidden=true;timer.start(seconds);$('quickTimerSelect').value='';$('quickTimerSelect').focus({preventScroll:true});}
+  let importing=false;
+  $('setupForm').onsubmit=async event=>{
+   event.preventDefault();if(importing)return;importing=true;const startButton=$('setupForm').querySelector('[type=submit]');startButton.disabled=true;startButton.textContent='正在识别…';const sources={workout:$('workoutUrl').value,entertainment:$('entertainmentUrl').value};const next={};let firstInvalid;
+   for(const role of Object.keys(ROLES)){try{$(role+'ShortFix').hidden=true;next[role]=await Promise.all(parseImport(sources[role]).map(v=>resolveVideo(v)));$(role+'Error').textContent='';}catch(error){next[role]=null;$(role+'Error').textContent=error.message;if(error.shortUrl){$(role+'ShortFix').hidden=false;$(role+'ShortLink').href=error.shortUrl;$(role+'ShortFix').dataset.shortUrl=error.shortOriginal||error.shortUrl;}}detect(role);$(role+'Url').setAttribute('aria-invalid',String(!next[role]));if(!next[role]&&!firstInvalid)firstInvalid=$(role+'Url');}
+   importing=false;startButton.disabled=false;startButton.textContent='开始';if(Object.keys(ROLES).some(role=>$(role+'Url').value!==sources[role])){$('workoutError').textContent='输入已改变，请再次点击开始。';return;}if(firstInvalid){firstInvalid.focus();return;}timer.cancel();save();queues=next;indices={workout:0,entertainment:0};videos={workout:queues.workout[0],entertainment:queues.entertainment[0]};mainRole='entertainment';layout();$('setupView').hidden=true;$('sessionView').hidden=false;$('sessionMute').checked=$('setupMute').checked;$('combo').textContent=`${videos.workout.platform} × ${videos.entertainment.platform}`;
    $('entertainmentVolumeRow').hidden=videos.entertainment.platform!=='YouTube';$('entertainmentVolume').disabled=true;
-   $('platformHelp').hidden=!Object.values(videos).some(v=>v.platform==='Bilibili');$('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。快速计时以视觉方式提醒，不会中断或重载视频。':'';
-   document.dispatchEvent(new CustomEvent('cn:session-start',{detail:{workouts:queues.workout}}));mount('entertainment');mount('workout');$('sessionStatus').textContent='准备好后点击“同时播放”；B站视频请在播放器内开始。';$('playBoth').focus({preventScroll:true});window.scrollTo(0,0);
+   const hasBilibili=Object.values(videos).some(v=>v.platform==='Bilibili');$('platformHelp').hidden=!hasBilibili;$('playBoth').hidden=hasBilibili;$('pauseBoth').hidden=hasBilibili;$('manualPlaybackHint').hidden=!hasBilibili;$('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。快速计时以视觉方式提醒，不会中断或重载视频。':'';
+   document.dispatchEvent(new CustomEvent('cn:session-start',{detail:{workouts:queues.workout}}));mount('entertainment');mount('workout');$('sessionStatus').textContent=Object.values(videos).some(v=>v.platform==='Bilibili')?'请在各播放器内分别开始或暂停。':'准备好后点击“同时播放”。';$('quickTimerSelect').focus({preventScroll:true});window.scrollTo(0,0);
   };
   function transport(action){if(action==='pause')document.dispatchEvent(new CustomEvent('cn:pause-all'));const bili=[],waiting=[];for(const [role,adapter] of Object.entries(adapters)){
    const cap=action==='play'?'canPlayProgrammatically':'canPauseProgrammatically';
@@ -177,17 +202,33 @@
   $('playBoth').onclick=()=>transport('play');$('pauseBoth').onclick=()=>transport('pause');
   $('swap').onclick=()=>{mainRole=mainRole==='entertainment'?'workout':'entertainment';layout();notice(`${ROLES[mainRole]}已切换为大屏。`);};
   $('position').onchange=()=>$('stage').dataset.position=$('position').value;
-  function sizePip(){const stage=$('stage');if(!stage.style.getPropertyValue('--pip-width'))return;const width=Math.max(200,Math.min(Number($('pipSize').value),stage.clientWidth-24));stage.style.setProperty('--pip-height',Math.max(238,width*.5625+36)+'px');$('pipSizeValue').textContent=Math.round(width)+'px';}
+  for(const role of Object.keys(ROLES))$(role+'ApplyId').onclick=()=>{try{const v=parseVideo($(role+'ReplacementId').value);if(v.platform!=='Bilibili'||v.shortUrl)throw Error();$(role+'Url').value=$(role+'Url').value.replace($(role+'ShortFix').dataset.shortUrl,window.MoveMixLibrary.canonical(v));$(role+'Url').dispatchEvent(new Event('input',{bubbles:true}));$(role+'ShortFix').hidden=true;}catch{$(role+'Error').textContent='请输入有效的BV号、av号或完整B站视频地址。';}};
+
+
+  function sizePip(){
+   const stage=$('stage'),workspace=$('playerWorkspace'),split=stage.classList.contains('split-stage'),side=split&&$('splitPosition').value.startsWith('side-');workspace.classList.toggle('side-workspace',side);
+   if(!stage.style.getPropertyValue('--pip-width')&&!split)return;
+   const available=workspace.clientWidth,width=Math.max(204,Math.min(Number($('pipSize').value),side?Math.max(204,available-220):available-24)),height=Math.max(238,width*.5625+36);
+   stage.style.setProperty('--split-width',width+'px');stage.style.setProperty('--pip-height',height+'px');workspace.style.setProperty('--secondary-height',height+'px');workspace.style.setProperty('--primary-height',$('mainHeight').value+'px');
+   if(split)stage.style.setProperty('--main-width',Math.max(204,Math.min(available*Number($('mainWidth').value)/100,side?available-width-16:available))+'px');
+   $('pipSizeValue').textContent=Math.round(width)+'px';
+  }
   $('pipSize').oninput=()=>{$('stage').style.setProperty('--pip-width',$('pipSize').value+'px');sizePip();};
-  if(window.ResizeObserver)new ResizeObserver(sizePip).observe($('stage'));else window.addEventListener('resize',sizePip);
+  if(window.ResizeObserver){const observer=new ResizeObserver(sizePip);observer.observe($('stage'));observer.observe($('playerWorkspace'));}else window.addEventListener('resize',sizePip);
   for(const role of Object.keys(ROLES)){
    $(role+'Previous').onclick=()=>changeItem(role,indices[role]-1,true);
    $(role+'Next').onclick=()=>changeItem(role,indices[role]+1,true);
    $(role+'Queue').onchange=()=>changeItem(role,Number($(role+'Queue').value),true);
   }
-  function immersive(active){document.body.classList.toggle('immersive',active);$('immerse').setAttribute('aria-pressed',String(active));$('immerse').textContent=active?'退出沉浸模式':'沉浸模式';}
-  $('immerse').onclick=()=>immersive(!document.body.classList.contains('immersive'));
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('immersive')){immersive(false);$('immerse').focus();}});
+  function immersive(active){
+   const stage=$('stage');if(active&&!stage.classList.contains('split-stage')){$('mainWidth').value='100';stage.style.setProperty('--main-width','100%');$('mainHeight').value=Math.round(stage.getBoundingClientRect().height);stage.style.setProperty('--main-height',stage.getBoundingClientRect().height+'px');}
+   stage.classList.toggle('split-stage',active);$('splitSettings').hidden=!active;$('position').closest('label').hidden=active;$('immerse').setAttribute('aria-pressed',String(active));$('immerse').textContent=active?'浮窗模式':'分屏';sizePip();
+  }
+  $('immerse').onclick=()=>immersive(!$('stage').classList.contains('split-stage'));
+  $('mainWidth').oninput=sizePip;
+  $('mainHeight').oninput=()=>{$('stage').style.setProperty('--main-height',$('mainHeight').value+'px');sizePip();};
+  $('splitPosition').onchange=()=>{$('stage').dataset.splitPosition=$('splitPosition').value;sizePip();};
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('stage').classList.contains('split-stage'))immersive(false);});
   $('sessionMute').onchange=()=>{
    $('setupMute').checked=$('sessionMute').checked;save();const adapter=adapters.workout;if(!adapter)return;
    if(adapter.capabilities.canMuteProgrammatically){try{adapter.setMuted($('sessionMute').checked);notice(adapter.ready?'已更新锻炼静音设置。':'将在锻炼播放器就绪后应用静音设置。');}catch{notice('设置暂未生效，请重试。');}}
@@ -195,15 +236,17 @@
   };
   $('applyMute').onclick=()=>{mount('workout');notice('已重新载入B站锻炼视频；请在播放器内确认静音并开始播放。');};
   $('entertainmentVolume').oninput=()=>{const volume=Number($('entertainmentVolume').value);$('volumeValue').textContent=volume+'%';const a=adapters.entertainment;if(a?.capabilities.canSetVolume){a.setVolume(volume);a.setMuted(volume===0);}};
-  document.querySelectorAll('[data-seconds]').forEach(button=>button.onclick=()=>startTimer(Number(button.dataset.seconds)));
-  $('cancelTimer').onclick=()=>{timer.cancel();$('timerResult').textContent='已取消计时';$('timerChoices').querySelector('button').focus({preventScroll:true});};
-  $('customToggle').onclick=()=>{$('customForm').hidden=!$('customForm').hidden;$('customToggle').setAttribute('aria-expanded',String(!$('customForm').hidden));if(!$('customForm').hidden)$('customSeconds').focus();};
+  $('quickTimerSelect').addEventListener('pointerdown',prepareCueAudio);$('quickTimerSelect').addEventListener('keydown',prepareCueAudio);
+  $('quickTimerSelect').onchange=()=>{const value=$('quickTimerSelect').value;$('quickTimerSelect').value='';if(value==='custom'){$('customForm').hidden=false;$('customSeconds').focus();}else if(value==='cancel'){timer.cancel();$('timerResult').textContent='已取消计时';}else if(value)startTimer(Number(value));};
   $('customForm').onsubmit=e=>{e.preventDefault();startTimer(Number($('customSeconds').value));};
+  const lastTap=new WeakMap();document.addEventListener('click',event=>{const target=event.target.closest?.('.transport button,#immerse');if(!target||!event.isTrusted)return;const now=Date.now(),previous=lastTap.get(target)||0;if(now-previous<320){event.preventDefault();event.stopImmediatePropagation();return;}lastTap.set(target,now);},true);
+  document.addEventListener('dblclick',event=>{if(event.target.closest?.('button,select,summary'))event.preventDefault();});
   document.querySelectorAll('[data-reload]').forEach(button=>button.onclick=()=>{const role=button.dataset.reload;if(role==='entertainment')timer.cancel();mount(role);notice(`已重新加载${ROLES[role]}视频，进度会重置。`);});
   $('back').onclick=()=>{document.dispatchEvent(new CustomEvent('cn:session-end'));
-   timer.cancel();clearTimeout(finishTimeout);immersive(false);for(const role of Object.keys(adapters)){adapters[role].destroy();delete adapters[role];}save();$('sessionView').hidden=true;$('setupView').hidden=false;$('customForm').hidden=true;$('customToggle').setAttribute('aria-expanded','false');$('timerResult').textContent='';$('toast').hidden=true;$('workoutUrl').focus({preventScroll:true});window.scrollTo(0,0);
+   timer.cancel();clearTimeout(finishTimeout);immersive(false);for(const role of Object.keys(adapters)){adapters[role].destroy();delete adapters[role];}save();$('sessionView').hidden=true;$('setupView').hidden=false;$('customForm').hidden=true;$('timerResult').textContent='';$('toast').hidden=true;$('workoutUrl').focus({preventScroll:true});window.scrollTo(0,0);
   };
   document.addEventListener('visibilitychange',()=>timer.tick());window.addEventListener('pageshow',()=>timer.tick());window.addEventListener('pagehide',()=>timer.cancel());
  }
- return {parseVideo,parseImport,bilibiliURL,PlayerAdapter,YouTubePlayerAdapter,BilibiliPlayerAdapter,createAdapter,QuickTimer,beginAudioDuck,init};
+ return {parseVideo,parseImport,resolveVideo,bilibiliURL,PlayerAdapter,YouTubePlayerAdapter,BilibiliPlayerAdapter,createAdapter,QuickTimer,beginAudioDuck,init};
 });
+

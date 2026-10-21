@@ -35,7 +35,7 @@ function renderFavorites(){
  if(!filtered.length)list.append(element('p','这里还没有符合条件的收藏。可添加自己的视频，或收藏推荐运动。','collection-note'));
 }
 
-$('favoriteForm').onsubmit=e=>{e.preventDefault();try{const parsed=C.parseImport($('favoriteUrl').value);if(parsed.length!==1)throw Error('每次收藏一个视频；播放队列仍支持批量导入。');const video=parsed[0],known=L.workouts.find(x=>x.id===video.id);saveFavorite(L.canonical(video),$('favoriteTitle').value||known?.title||video.id||'YouTube 播放列表',$('favoriteRole').value,$('favoriteGroup').value);}catch(error){feedback(error.message);}};
+$('favoriteForm').onsubmit=e=>{e.preventDefault();try{const parsed=C.parseImport($('favoriteUrl').value);if(parsed.length!==1)throw Error('每次收藏一个视频；播放队列仍支持批量导入。');const video=parsed[0],known=L.workouts.find(x=>x.id===video.id);saveFavorite(L.canonical(video),$('favoriteTitle').value||known?.title||video.id||(video.shortUrl?'B站短链（待解析）':'YouTube 播放列表'),$('favoriteRole').value,$('favoriteGroup').value);}catch(error){feedback(error.message);}};
 $('favoriteRole').onchange=()=>{$('favoriteGroupLabel').hidden=$('favoriteRole').value!=='workout';};$('favoriteGroupFilter').onchange=renderFavorites;
 $('favoritePlatformFilter').onchange=renderFavorites;$('favoriteRoleFilter').onchange=renderFavorites;renderFavorites();if(store.failed)feedback('浏览器无法读取收藏存储；仍可添加本次会话收藏。');
 const current={};let active=null,duck=null,release=null,phaseKey=null,tickHandle=null,aligned=false;const clock=new L.Timeline();
