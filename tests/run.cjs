@@ -5,7 +5,7 @@ let checks=0;function test(name,run){run();checks++;console.log('PASS '+name);}
 const yt='M7lc1UVf-VE',bv='BV1B7411m7LV';
 test('URL parsing: HTTPS, no scheme, watch, short, mobile, embed, live, BV and part',()=>{
  for(const url of [`youtube.com/watch?v=${yt}`,`https://youtu.be/${yt}`,`https://m.youtube.com/watch?v=${yt}`,`https://www.youtube.com/shorts/${yt}`,`https://youtube.com/embed/${yt}`,`https://youtube.com/live/${yt}`])assert.equal(parseVideo(url).id,yt);
- assert.deepEqual(parseVideo(`https://www.bilibili.com/video/${bv}/?p=2`),{platform:'Bilibili',id:bv,p:'2'});
+ assert.deepEqual(parseVideo(`https://www.bilibili.com/video/${bv}/?p=2`),{platform:'Bilibili',id:bv,p:2,originalUrl:`https://www.bilibili.com/video/${bv}/?p=2`,sourceKey:`bilibili:${bv}:p2`});
  for(const url of ['', 'javascript:alert(1)',`https://youtube.com.evil.test/watch?v=${yt}`,`https://youtube.com@evil.test/watch?v=${yt}`,`https://user:pass@youtube.com/watch?v=${yt}`,'https://www.youtube.com/watch?v=short','https://bilibili.com/video/no'])assert.throws(()=>parseVideo(url));
 });
 test('Bilibili share text, punctuation, BV/av numbers and multiline import',()=>{

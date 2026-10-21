@@ -8,11 +8,14 @@
  'use strict';
  const ROLES={workout:'锻炼',entertainment:'娱乐'};
  const unsupported=Object.freeze({canPlayProgrammatically:false,canPauseProgrammatically:false,canMuteProgrammatically:false,canSetVolume:false,canGetCurrentTime:false,canDetectEnded:false,canSeek:false});
+ function normalizePage(value){if(typeof value==='string'&&!/^\d+$/.test(value))return 1;const number=Number(value);return Number.isSafeInteger(number)&&number>=1?number:1;}
+ function sourceKey(video){return video.platform==='Bilibili'&&video.shortUrl?`bilibili:short:${video.shortUrl}`:video.platform==='Bilibili'?`bilibili:${video.id}:p${normalizePage(video.p)}`:`youtube:${video.playlistId?'playlist:'+video.playlistId:video.id}`;}
+ function bilibiliSource(id,page,originalUrl,aid){const video={platform:'Bilibili',id,p:normalizePage(page),originalUrl};if(aid)video.aid=aid;video.sourceKey=sourceKey(video);return video;}
  function parseVideo(text){
-  const textValue=text.trim().replace(/[\u200B-\u200D\uFEFF]/g,'');const av=textValue.match(/^av([1-9]\d*)$/i);if(av)return {platform:'Bilibili',id:'av'+av[1],aid:av[1],p:null};const bv=textValue.match(/^BV[0-9A-Za-z]{10}$/i);if(bv)return {platform:'Bilibili',id:'BV'+textValue.slice(2),p:null};
-  if(!/https?:\/\//i.test(textValue)){const embedded=textValue.match(/\b(BV[0-9A-Za-z]{10}|av[1-9]\d*)\b/i);if(embedded&&embedded[0]!==textValue&&!/bilibili:\/\//i.test(textValue))return parseVideo(embedded[0]);}
+  const textValue=text.trim().replace(/[\u200B-\u200D\uFEFF]/g,'');const av=textValue.match(/^av([1-9]\d*)$/i);if(av)return bilibiliSource('av'+av[1],1,textValue,av[1]);const bv=textValue.match(/^BV[0-9A-Za-z]{10}$/i);if(bv)return bilibiliSource('BV'+textValue.slice(2),1,textValue);
+  if(!/https?:\/\//i.test(textValue)&&!/(?:bilibili\.com|b23\.tv|bili2233\.cn)\//i.test(textValue)){const embedded=textValue.match(/\b(BV[0-9A-Za-z]{10}|av[1-9]\d*)\b/i);if(embedded&&embedded[0]!==textValue&&!/bilibili:\/\//i.test(textValue))return parseVideo(embedded[0]);}
   const matched=textValue.match(/(?:https?|bilibili):\/\/[^\s<>"'【】《》]+/i);const raw=(matched?matched[0]:textValue).replace(/[，。；！？、）)\]》】,;!.]+$/u,'');const u=new URL(/^(?:https?|bilibili):\/\//i.test(raw)?raw:raw.startsWith('//')?'https:'+raw:'https://'+raw);
-  if(u.protocol==='bilibili:'){const id=u.searchParams.get('bvid')||u.pathname.split('/').filter(Boolean).pop()||u.hostname;if(/^BV[0-9A-Za-z]{10}$/i.test(id))return parseVideo(id);const aid=u.searchParams.get('aid')||id;if(/^(?:av)?[1-9]\d*$/i.test(aid))return parseVideo('av'+aid.replace(/^av/i,''));throw Error('unsupported Bilibili app link');}
+  if(u.protocol==='bilibili:'){const id=u.searchParams.get('bvid')||u.pathname.split('/').filter(Boolean).pop()||u.hostname;if(/^BV[0-9A-Za-z]{10}$/i.test(id))return bilibiliSource(id,u.searchParams.get('p'),raw);const aid=u.searchParams.get('aid')||id;if(/^(?:av)?[1-9]\d*$/i.test(aid))return bilibiliSource('av'+aid.replace(/^av/i,''),u.searchParams.get('p'),raw,aid.replace(/^av/i,''));throw Error('unsupported Bilibili app link');}
   if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw Error('invalid URL');
   const host=u.hostname.toLowerCase();let id;
   if(['b23.tv','www.b23.tv','bili2233.cn','www.bili2233.cn'].includes(host)){if(!/^\/[A-Za-z0-9_-]+\/?$/.test(u.pathname))throw Error('invalid short URL');u.protocol='https:';return {platform:'Bilibili',id:null,shortUrl:u.href,originalUrl:raw};}
@@ -23,10 +26,10 @@
    return playlistId?{platform:'YouTube',id,playlistId}:{platform:'YouTube',id};
   }
   if(['bilibili.com','www.bilibili.com','m.bilibili.com','player.bilibili.com'].includes(host)){
-   const queryId=u.searchParams.get('bvid')||u.searchParams.get('aid');if(queryId){const result=parseVideo(/^\d+$/.test(queryId)?'av'+queryId:queryId);const part=u.searchParams.get('p');if(part&&/^[1-9]\d*$/.test(part))result.p=part;return result;}
-   const av=u.pathname.match(/^\/video\/av([1-9]\d*)(?:\/|$)/i);if(av){const p=u.searchParams.get('p');return {platform:'Bilibili',id:'av'+av[1],aid:av[1],p:p&&/^[1-9]\d*$/.test(p)?p:null};}
+   const queryId=u.searchParams.get('bvid')||u.searchParams.get('aid');if(queryId){const result=parseVideo(/^\d+$/.test(queryId)?'av'+queryId:queryId);return bilibiliSource(result.id,u.searchParams.get('p'),raw,result.aid);}
+   const av=u.pathname.match(/^\/video\/av([1-9]\d*)(?:\/|$)/i);if(av){const p=u.searchParams.get('p');return bilibiliSource('av'+av[1],p,raw,av[1]);}
    id=u.pathname.match(/^\/video\/(BV[0-9A-Za-z]{10})(?:\/|$)/)?.[1];if(!id)throw Error('invalid BV ID');
-   const p=u.searchParams.get('p');return {platform:'Bilibili',id,p:p&&/^[1-9]\d*$/.test(p)?p:null};
+   const p=u.searchParams.get('p');return bilibiliSource(id,p,raw);
   }
   throw Error('unsupported host');
  }
@@ -49,13 +52,13 @@
  const shortCache=new Map();
  async function resolveVideo(video,fetcher=fetch){
   if(!video.shortUrl)return video;
-  if(shortCache.has(video.shortUrl))return {...shortCache.get(video.shortUrl),...(video.title?{title:video.title}:{})};
+  if(shortCache.has(video.shortUrl))return {...shortCache.get(video.shortUrl),originalUrl:video.originalUrl||video.shortUrl,resolvedUrl:shortCache.get(video.shortUrl).originalUrl,...(video.title?{title:video.title}:{})};
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
-  try{const response=await fetcher(video.shortUrl,{redirect:'follow',credentials:'omit',signal:controller.signal});const resolved=parseVideo(response.url);if(resolved.shortUrl||resolved.platform!=='Bilibili')throw Error('not a video redirect');shortCache.set(video.shortUrl,resolved);return {...resolved,...(video.title?{title:video.title}:{})};}
+  try{const response=await fetcher(video.shortUrl,{redirect:'follow',credentials:'omit',signal:controller.signal});const resolved=parseVideo(response.url);if(resolved.shortUrl||resolved.platform!=='Bilibili')throw Error('not a video redirect');shortCache.set(video.shortUrl,resolved);return {...resolved,originalUrl:video.originalUrl||video.shortUrl,resolvedUrl:resolved.originalUrl,...(video.title?{title:video.title}:{})};}
   catch{const error=Error('已识别B站短链，但当前浏览器无法展开。请打开短链，再粘贴完整视频地址或BV/av号。');error.shortUrl=video.shortUrl;error.shortOriginal=video.originalUrl||video.shortUrl;throw error;}
   finally{clearTimeout(timeout);}
  }
- function bilibiliURL(video,muted){const u=new URL('https://player.bilibili.com/player.html');if(video.aid)u.searchParams.set('aid',video.aid);else u.searchParams.set('bvid',video.id);u.searchParams.set('autoplay','0');u.searchParams.set('muted',muted?'1':'0');u.searchParams.set('danmaku','0');if(video.p)u.searchParams.set('p',video.p);return u.href;}
+ function bilibiliURL(video,muted){const u=new URL('https://player.bilibili.com/player.html');if(video.aid)u.searchParams.set('aid',video.aid);else u.searchParams.set('bvid',video.id);u.searchParams.set('autoplay','0');u.searchParams.set('muted',muted?'1':'0');u.searchParams.set('danmaku','0');u.searchParams.set('p',String(normalizePage(video.p)));return u.href;}
  let ytPromise;
  function loadYouTubeAPI(){
   if(window.YT?.Player)return Promise.resolve();
@@ -69,7 +72,7 @@
   }return ytPromise;
  }
  class PlayerAdapter{
-  constructor(mount,video,options={}){this.mount=mount;this.video=video;this.options=options;this.capabilities=unsupported;this.ready=false;this.destroyed=false;}
+  constructor(mount,video,options={}){this.mount=mount;this.video=video;this.sourceKey=sourceKey(video);this.options=options;this.capabilities=unsupported;this.ready=false;this.destroyed=false;}
   play(){return false;} pause(){return false;} setMuted(){return false;} setVolume(){return false;} getCurrentTime(){return null;} getAudioState(){return null;} getPlayerState(){return null;} seek(){return false;}
   status(text){if(!this.destroyed)this.options.onStatus?.(text);}
   error(text){if(!this.destroyed)this.options.onError?.(text);}
@@ -132,7 +135,7 @@
  function init(){
   const $=id=>document.getElementById(id);const adapters={};let queues={},indices={workout:0,entertainment:0},videos={},mainRole='entertainment',toastTimeout,finishTimeout;const KEY='move-mix-cn:setup:v1';
   function notice(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').hidden=true,6000);$('sessionStatus').textContent=text;}
-  function detect(role){let queue=null;const value=$(role+'Url').value;try{queue=parseImport(value);}catch{}$(role+'Detected').textContent=queue?'已识别 '+queue.length+' 项'+(queue.some(v=>v.shortUrl)?'（短链将在开始时解析）':'')+' · '+[...new Set(queue.map(v=>v.platform))].join(' / '):value.trim()?'待识别：支持分享文字、完整链接或BV号':'可粘贴多条分享文字、链接或BV号，每行一条';return queue;}
+  function detect(role){let queue=null;const value=$(role+'Url').value;try{queue=parseImport(value);}catch{}$(role+'Detected').textContent=queue?'已识别 '+queue.length+' 项'+(queue.some(v=>v.shortUrl)?'（短链将在开始时解析）':'')+' · '+[...new Set(queue.map(v=>v.platform+(v.platform==='Bilibili'&&!v.shortUrl?' · P'+v.p:'')))].join(' / '):value.trim()?'待识别：支持分享文字、完整链接或BV号':'可粘贴多条分享文字、链接或BV号，每行一条';return queue;}
 
   function save(){try{localStorage.setItem(KEY,JSON.stringify({workout:$('workoutUrl').value,entertainment:$('entertainmentUrl').value,muted:$('setupMute').checked}));}catch{}}
   try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved){$('workoutUrl').value=typeof saved.workout==='string'?saved.workout:'';$('entertainmentUrl').value=typeof saved.entertainment==='string'?saved.entertainment:'';$('setupMute').checked=true;}}catch{}
@@ -142,7 +145,7 @@
   function mount(role,autoPlay=false){
    document.dispatchEvent(new CustomEvent('cn:before-player-change',{detail:{role}}));
    adapters[role]?.destroy();$(role+'Failure').hidden=true;
-   const video=videos[role];const external=$(role+'External');external.href=window.MoveMixLibrary.canonical(video);external.textContent=ROLES[role]+' · 在'+(video.platform==='Bilibili'?'B站':'YouTube')+'打开';$(role+'Label').textContent=`${role==='workout'?'↗':'♫'} ${ROLES[role]} · ${video.platform}`;
+   const video=videos[role];const external=$(role+'External');external.href=window.MoveMixLibrary.canonical(video);external.textContent=ROLES[role]+' · 在'+(video.platform==='Bilibili'?'B站':'YouTube')+'打开';$(role+'Label').textContent=`${role==='workout'?'↗':'♫'} ${ROLES[role]} · ${video.platform}${video.platform==='Bilibili'?' · P'+video.p:''}`;
    const muted=role==='workout'?$('sessionMute').checked:false;
    adapters[role]=createAdapter($(role+'Mount'),video,{role,muted,autoPlay,volume:role==='entertainment'?Number($('entertainmentVolume').value):65,onStatus:text=>$(role+'State').textContent=text,onError:text=>failure(role,text),onNotice:notice,onEnded:()=>{if(indices[role]+1<queues[role].length)changeItem(role,indices[role]+1,true);else notice(`${ROLES[role]}队列已播放完毕。`);},onReady:()=>{if(role==='entertainment')$('entertainmentVolume').disabled=false;}});
    adapters[role].load();updateQueueUI();document.dispatchEvent(new CustomEvent('cn:player-mounted',{detail:{role,video,beginDuck:beginCountdownCue}}));if(role==='workout'){$('applyMute').hidden=true;updateMuteHelp();}
@@ -247,6 +250,6 @@
   };
   document.addEventListener('visibilitychange',()=>timer.tick());window.addEventListener('pageshow',()=>timer.tick());window.addEventListener('pagehide',()=>timer.cancel());
  }
- return {parseVideo,parseImport,resolveVideo,bilibiliURL,PlayerAdapter,YouTubePlayerAdapter,BilibiliPlayerAdapter,createAdapter,QuickTimer,beginAudioDuck,init};
+ return {parseVideo,parseImport,normalizePage,sourceKey,resolveVideo,bilibiliURL,PlayerAdapter,YouTubePlayerAdapter,BilibiliPlayerAdapter,createAdapter,QuickTimer,beginAudioDuck,init};
 });
 
