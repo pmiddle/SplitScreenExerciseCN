@@ -136,7 +136,7 @@
  }
  function init(){
   const $=id=>document.getElementById(id);const adapters={};let queues={},indices={workout:0,entertainment:0},videos={},mainRole='entertainment',toastTimeout,finishTimeout,sessionId=null,pipAdjusted=false;const KEY='move-mix-cn:setup:v1';
-  const parts=window.MoveMixParts.createController({parseImport,resolveVideo,sourceKey},(role,video)=>{if(role==='entertainment')captureEntertainment();const existing=queues[role].findIndex(v=>sourceKey(v)===sourceKey(video));if(existing>=0&&existing!==indices[role]){changeItem(role,existing);return;}queues[role][indices[role]]=video;videos[role]=video;mount(role);if(role==='workout')document.dispatchEvent(new CustomEvent('cn:workout-selected',{detail:{workouts:queues.workout,sessionId}}));});
+  const parts=window.MoveMixParts.createController({parseImport,resolveVideo,sourceKey});
   function captureEntertainment(){if(!sessionId||!videos.entertainment)return;const snapshot=window.MoveMixRecords?.entertainmentSnapshot(videos.entertainment,adapters.entertainment,sessionId);if(snapshot)document.dispatchEvent(new CustomEvent('cn:entertainment-progress',{detail:snapshot}));}
   const progressPoll=setInterval(captureEntertainment,5000);
   function notice(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').hidden=true,6000);$('sessionStatus').textContent=text;}
@@ -153,7 +153,7 @@
    const video=videos[role];const external=$(role+'External');external.href=window.MoveMixLibrary.canonical(video);external.textContent=ROLES[role]+' · 在'+(video.platform==='Bilibili'?'B站':'YouTube')+'打开';$(role+'Label').textContent=`${role==='workout'?'↗':'♫'} ${ROLES[role]} · ${video.platform}${video.platform==='Bilibili'?' · P'+video.p:''}`;
    const muted=role==='workout'?$('sessionMute').checked:false;
    adapters[role]=createAdapter($(role+'Mount'),video,{role,muted,autoPlay,volume:role==='entertainment'?Number($('entertainmentVolume').value):65,onStatus:text=>$(role+'State').textContent=text,onError:text=>failure(role,text),onNotice:notice,onEnded:()=>{if(indices[role]+1<queues[role].length)changeItem(role,indices[role]+1,true);else notice(`${ROLES[role]}队列已播放完毕。`);},onReady:()=>{if(role==='entertainment'){$('entertainmentVolume').disabled=false;captureEntertainment();}}});
-   adapters[role].load();sizePip();if(role==='entertainment')captureEntertainment();parts.session(role,video,indices[role]);updateQueueUI();document.dispatchEvent(new CustomEvent('cn:player-mounted',{detail:{role,video,beginDuck:beginCountdownCue}}));if(role==='workout'){$('applyMute').hidden=true;updateMuteHelp();}
+   adapters[role].load();sizePip();if(role==='entertainment')captureEntertainment();updateQueueUI();document.dispatchEvent(new CustomEvent('cn:player-mounted',{detail:{role,video,beginDuck:beginCountdownCue}}));if(role==='workout'){$('applyMute').hidden=true;updateMuteHelp();}
   }
   function updateQueueUI(){
    for(const role of Object.keys(ROLES)){

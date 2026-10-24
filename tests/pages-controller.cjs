@@ -11,6 +11,7 @@ const w=field(hosts.workoutParts,'锻炼 P3'),e=field(hosts.entertainmentParts,'
 const reopened=P.createController(C,()=>{});assert.equal((await reopened.prepare('workout',bv))[1].p,3);
 controller.refresh('workout','BV1kts5zoErK');await controller.prepare('workout','BV1kts5zoErK');assert.equal(field(hosts.workoutParts,'锻炼 P1'),undefined);
 controller.refresh('workout','BVTEST123456');const pending=controller.prepare('workout','BVTEST123456');controller.refresh('workout',bv);await controller.prepare('workout',bv);releaseOld();await assert.rejects(()=>pending,/输入已改变/);assert.equal(field(hosts.workoutParts,'锻炼 P1').checked,true);
+global.fetch=async()=>{throw Error('offline')};const manual=P.createController(C);await manual.prepare('entertainment',bv);const input=field(hosts.entertainmentParts,'娱乐想看的分P');input.value='1,3,5~7';input.oninput();assert.deepEqual((await manual.prepare('entertainment',bv)).map(v=>v.p),[1,3,5,6,7]);assert.deepEqual((await P.createController(C).prepare('entertainment',bv)).map(v=>v.p),[1,3,5,6,7]);
 console.log('PASS setup multi-select defaults/selection, independent roles, saved selection restore, single-P hidden, stale metadata ignored. Synthetic metadata only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

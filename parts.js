@@ -70,20 +70,11 @@
   }
   if(!queue.length)throw Error('请选择至少一个视频或分P。');return queue;
  }
- function createController(core,onSessionSelect){
+ function createController(core){
   const $=id=>document.getElementById(id),load=createLoader(),states={},savedKey='move-mix-cn:parts:v1';let saved={};
   try{saved=JSON.parse(localStorage.getItem(savedKey)||'{}')||{};}catch{}
   const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e;};
   function persist(){saved=Object.fromEntries(Object.entries(states).map(([role,state])=>[role,{input:state.input,selections:state.entries.map(e=>e.selectedPages)}]));try{localStorage.setItem(savedKey,JSON.stringify(saved));}catch{}}
-  function sessionControl(video,label,change){
-   const box=node('div');box.className='part-picker';if(video.platform!=='Bilibili')return box;
-   if(video.videoTitle)box.append(node('p','《'+video.videoTitle+'》'));
-   const available=video.pages?.length;if(available===1&&video.p===video.pages[0].page)return box;
-   const wrapper=node('label',label+' · 选择分P'),field=node(available?'select':'input'),error=node('small');field.setAttribute('aria-label',label+'分P');error.className='error';
-   if(available){for(const part of video.pages){const option=node('option','P'+part.page+(part.title?' · '+part.title:''));option.value=String(part.page);field.append(option);}if(!video.pages.some(p=>p.page===video.p)){const option=node('option','P'+video.p);option.value=String(video.p);field.append(option);}}
-   else{field.type='number';field.min='1';field.step='1';field.inputMode='numeric';}field.value=String(video.p||1);
-   field.onchange=()=>{try{change(selectPage(core,video,field.value));}catch(e){error.textContent=e.message;}};wrapper.append(field);box.append(wrapper,error);return box;
-  }
   function render(role){
    const state=states[role],host=$(role+'Parts');host.replaceChildren();if(!state)return;
    state.entries.forEach((entry,index)=>{
@@ -102,9 +93,9 @@
      for(const part of options){const row=node('label'),check=node('input');check.type='checkbox';check.value=String(part.page);check.checked=entry.selectedPages.includes(part.page);check.setAttribute('aria-label',label+' P'+part.page);check.onchange=()=>{entry.selectedPages=check.checked?[...new Set([...entry.selectedPages,part.page])].sort((a,b)=>a-b):entry.selectedPages.filter(p=>p!==part.page);entry.draft=entry.selectedPages.join(',');persist();report();};row.append(check,node('span','P'+part.page+(part.title?' · '+part.title:'')));list.append(row);}box.append(list);
      const all=node('button','全选');all.type='button';all.onclick=()=>{try{entry.selectedPages=parsePages(options.map(p=>p.page).join(','));entry.draft=entry.selectedPages.join(',');persist();render(role);}catch(e){error.textContent=e.message;}};box.append(all);
     }else{
-     const wrapper=node('label'),field=node('input');field.type='text';field.placeholder='例如：1,2,3 或 1~3';field.value=entry.draft;field.setAttribute('aria-label',label+'想看的分P');field.oninput=()=>{entry.draft=field.value;};wrapper.append(field);box.append(wrapper,node('small','可一次选择多个'));
+     const wrapper=node('label'),field=node('input');field.type='text';field.placeholder='例如：1,2,3 或 1~3';field.value=entry.draft;field.setAttribute('aria-label',label+'想看的分P');field.oninput=()=>{entry.draft=field.value;try{entry.selectedPages=parsePages(entry.draft);expandQueue(core,state.entries);persist();report();error.textContent='';}catch(e){summary.textContent='';error.textContent=entry.draft.trim()?e.message:'';}};wrapper.append(field);box.append(wrapper,node('small','可一次选择多个'));
     }
-    const apply=node('button','加入队列');apply.type='button';apply.onclick=()=>{try{entry.selectedPages=parsePages(entry.draft);expandQueue(core,state.entries);persist();report();summary.textContent+=' · 已加入队列';error.textContent='';}catch(e){error.textContent=e.message;}};box.append(apply,summary,error);host.append(box);
+    box.append(summary,error);host.append(box);
    });
   }
   function refresh(role,input){
@@ -120,8 +111,7 @@
    for(const entry of state.entries){entry.video=await core.resolveVideo(entry.video);if(entry.video.platform==='Bilibili')entry.selectedPages=parsePages(entry.draft);}
    const queue=expandQueue(core,state.entries);persist();return queue;
   }
-  function session(role,video){const host=$(role+'SessionParts');host.replaceChildren();host.append(sessionControl(video,role==='workout'?'锻炼':'娱乐',next=>{const entry=states[role]?.entries[video.importIndex];if(entry&&entry.video.id===video.id&&!entry.selectedPages.includes(next.p)){entry.selectedPages.push(next.p);entry.selectedPages.sort((a,b)=>a-b);entry.draft=entry.selectedPages.join(',');persist();render(role);}onSessionSelect(role,next);}));}
-  return {refresh,prepare,session};
+  return {refresh,prepare};
  }
  return {endpoints,validPage,readMetadata,createLoader,selectPage,parsePages,expandQueue,createController};
 });
