@@ -7,10 +7,10 @@ function field(host,label){function scan(e){if(e.attributes?.['aria-label']===la
 (async()=>{
 const controller=P.createController(C,()=>{}),bv='BV1mB4y127g8';controller.refresh('workout',bv);controller.refresh('entertainment',`https://www.bilibili.com/video/${bv}/?p=2`);
 assert.equal((await controller.prepare('workout',bv))[0].pages.length,3);await controller.prepare('entertainment',`https://www.bilibili.com/video/${bv}/?p=2`);
-const w=field(hosts.workoutParts,'锻炼分P'),e=field(hosts.entertainmentParts,'娱乐分P');assert.equal(w.value,'1');assert.equal(e.value,'2');w.value='3';w.onchange();assert.equal((await controller.prepare('workout',bv))[0].p,3);assert.equal((await controller.prepare('entertainment',`https://www.bilibili.com/video/${bv}/?p=2`))[0].p,2);
-const reopened=P.createController(C,()=>{});assert.equal((await reopened.prepare('workout',bv))[0].p,3);
-controller.refresh('workout','BV1kts5zoErK');await controller.prepare('workout','BV1kts5zoErK');assert.equal(field(hosts.workoutParts,'锻炼分P'),undefined);
-controller.refresh('workout','BVTEST123456');const pending=controller.prepare('workout','BVTEST123456');controller.refresh('workout',bv);await controller.prepare('workout',bv);releaseOld();await assert.rejects(()=>pending,/输入已改变/);assert.equal(field(hosts.workoutParts,'锻炼分P').value,'3');
-console.log('PASS setup dropdown defaults/selection, independent roles, saved selection restore, single-P hidden, stale metadata ignored. Synthetic metadata only.');
+const w=field(hosts.workoutParts,'锻炼 P3'),e=field(hosts.entertainmentParts,'娱乐 P2');assert.equal(w.checked,false);assert.equal(e.checked,true);w.checked=true;w.onchange();assert.deepEqual((await controller.prepare('workout',bv)).map(v=>v.p),[1,3]);assert.equal((await controller.prepare('entertainment',`https://www.bilibili.com/video/${bv}/?p=2`))[0].p,2);
+const reopened=P.createController(C,()=>{});assert.equal((await reopened.prepare('workout',bv))[1].p,3);
+controller.refresh('workout','BV1kts5zoErK');await controller.prepare('workout','BV1kts5zoErK');assert.equal(field(hosts.workoutParts,'锻炼 P1'),undefined);
+controller.refresh('workout','BVTEST123456');const pending=controller.prepare('workout','BVTEST123456');controller.refresh('workout',bv);await controller.prepare('workout',bv);releaseOld();await assert.rejects(()=>pending,/输入已改变/);assert.equal(field(hosts.workoutParts,'锻炼 P1').checked,true);
+console.log('PASS setup multi-select defaults/selection, independent roles, saved selection restore, single-P hidden, stale metadata ignored. Synthetic metadata only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
