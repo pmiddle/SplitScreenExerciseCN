@@ -140,14 +140,17 @@
   function captureEntertainment(){if(!sessionId||!videos.entertainment)return;const snapshot=window.MoveMixRecords?.entertainmentSnapshot(videos.entertainment,adapters.entertainment,sessionId);if(snapshot)document.dispatchEvent(new CustomEvent('cn:entertainment-progress',{detail:snapshot}));}
   const progressPoll=setInterval(captureEntertainment,5000);
   function notice(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').hidden=true,6000);$('sessionStatus').textContent=text;}
-  function detect(role){let queue=null;const value=$(role+'Url').value;parts.refresh(role,value);try{queue=parseImport(value);}catch{}$(role+'Detected').textContent=queue?'已识别 '+queue.length+' 项'+(queue.some(v=>v.shortUrl)?'':'')+' · '+[...new Set(queue.map(v=>v.platform+(v.platform==='Bilibili'&&!v.shortUrl?' · P'+v.p:'')))].join(' / '):value.trim()?'待识别：支持分享文字、完整链接或BV号':'可粘贴多条分享文字、链接或BV号，每行一条';return queue;}
+  function detect(role){if(role==='workout'&&$('noWorkout').checked)return null;let queue=null;const value=$(role+'Url').value;parts.refresh(role,value);try{queue=parseImport(value);}catch{}$(role+'Detected').textContent=queue?'已识别 '+queue.length+' 项'+(queue.some(v=>v.shortUrl)?'':'')+' · '+[...new Set(queue.map(v=>v.platform+(v.platform==='Bilibili'&&!v.shortUrl?' · P'+v.p:'')))].join(' / '):value.trim()?'待识别：支持分享文字、完整链接或BV号':'可粘贴多条分享文字、链接或BV号，每行一条';return queue;}
 
-  function save(){try{localStorage.setItem(KEY,JSON.stringify({workout:$('workoutUrl').value,entertainment:$('entertainmentUrl').value,muted:$('setupMute').checked}));}catch{}}
-  try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved){$('workoutUrl').value=typeof saved.workout==='string'?saved.workout:'';$('entertainmentUrl').value=typeof saved.entertainment==='string'?saved.entertainment:'';$('setupMute').checked=true;}}catch{}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify({workout:$('workoutUrl').value,entertainment:$('entertainmentUrl').value,muted:$('setupMute').checked,noWorkout:$('noWorkout').checked}));}catch{}}
+  try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved){$('workoutUrl').value=typeof saved.workout==='string'?saved.workout:'';$('entertainmentUrl').value=typeof saved.entertainment==='string'?saved.entertainment:'';$('setupMute').checked=true;$('noWorkout').checked=!!saved.noWorkout;}}catch{}
+  function optionalWorkout(){const solo=$('noWorkout').checked;$('workoutVideoFields').hidden=solo;$('noWorkoutNote').hidden=!solo;$('workoutUrl').disabled=solo;$('setupMute').disabled=solo;$('setupMute').closest('label').hidden=solo;$('workoutError').textContent='';$('workoutUrl').removeAttribute('aria-invalid');if(!solo)detect('workout');save();}
+  optionalWorkout();$('noWorkout').onchange=optionalWorkout;
   for(const role of Object.keys(ROLES)){detect(role);$(role+'Url').addEventListener('input',()=>{detect(role);$(role+'Error').textContent='';$(role+'Url').removeAttribute('aria-invalid');save();});}
   $('setupMute').onchange=save;
   function failure(role,text){$(role+'State').textContent='加载遇到问题';$(role+'Failure').querySelector('p').textContent=text;$(role+'Failure').hidden=false;}
   function mount(role,autoPlay=false){
+   if(!videos[role])return;
    document.dispatchEvent(new CustomEvent('cn:before-player-change',{detail:{role}}));
    adapters[role]?.destroy();$(role+'Failure').hidden=true;
    const video=videos[role];const external=$(role+'External');external.href=window.MoveMixLibrary.canonical(video);external.textContent=ROLES[role]+' · 在'+(video.platform==='Bilibili'?'B站':'YouTube')+'打开';$(role+'Label').textContent=`${role==='workout'?'↗':'♫'} ${ROLES[role]} · ${video.platform}${video.platform==='Bilibili'?' · P'+video.p:''}`;
@@ -162,9 +165,9 @@
     select.value=String(indices[role]);$(role+'Previous').disabled=indices[role]<=0;$(role+'Next').disabled=indices[role]>=queue.length-1;
     $(role+'QueueNote').textContent=videos[role]?.platform==='Bilibili'?'用“下一项”切换分P，在播放器内播放。':videos[role]?.playlistId?'合集自动联播，也可选择下一项。':'播放完会切换下一项。';
    }
-   $('combo').textContent=`${videos.workout.platform} × ${videos.entertainment.platform}`;
+   $('combo').textContent=`${(videos.workout?.platform||'自主锻炼')} × ${videos.entertainment.platform}`;
    $('entertainmentVolumeRow').hidden=videos.entertainment.platform!=='YouTube';
-   const hasBilibili=Object.values(videos).some(v=>v.platform==='Bilibili');$('platformHelp').hidden=!hasBilibili;$('playBoth').hidden=hasBilibili;$('pauseBoth').hidden=hasBilibili;$('manualPlaybackHint').hidden=!hasBilibili;
+   const hasBilibili=Object.values(videos).some(v=>v?.platform==='Bilibili');$('platformHelp').hidden=!hasBilibili;$('playBoth').hidden=hasBilibili;$('pauseBoth').hidden=hasBilibili;$('playBoth').textContent=videos.workout?'▶ 同时播放':'▶ 播放';$('pauseBoth').textContent=videos.workout?'Ⅱ 全部暂停':'Ⅱ 暂停';$('manualPlaybackHint').hidden=!hasBilibili;
    $('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。':'';
   }
   function changeItem(role,index,autoPlay=false){
@@ -175,7 +178,7 @@
    mount(role,autoPlay);notice(`已切换${ROLES[role]}第${index+1}项。${videos[role].platform==='Bilibili'?'请在B站播放器中点击播放。':''}`);
   }
   function updateMuteHelp(){const bili=videos.workout?.platform==='Bilibili';$('muteHelp').textContent=bili?'改动静音后，请重新载入；视频会从头开始。':'YouTube 可直接切换锻炼静音。';}
-  function layout(){const small=mainRole==='entertainment'?'workout':'entertainment';$('stage').dataset.main=mainRole;for(const role of Object.keys(ROLES))$(role+'Shell').classList.toggle('small',role===small);}
+  function layout(){const solo=!videos.workout;$('sessionView').setAttribute('aria-label',solo?'娱乐播放与自主锻炼':'双视频播放');$('soundDescription').textContent=solo?'边运动，边看喜欢的内容。':'锻炼看动作，娱乐听喜欢的。';$('stage').classList.toggle('solo-stage',solo);$('workoutShell').hidden=solo;$('workoutQueue').closest('.queue-card').hidden=solo;$('saveCurrentWorkout').hidden=solo;$('workoutExternal').hidden=solo;$('swap').hidden=solo;$('immerse').hidden=solo;$('position').closest('label').hidden=solo;$('pipSize').closest('label').hidden=solo;$('sessionMute').closest('label').hidden=solo;$('muteHelp').hidden=solo;const small=mainRole==='entertainment'?'workout':'entertainment';$('stage').dataset.main=mainRole;for(const role of Object.keys(ROLES))$(role+'Shell').classList.toggle('small',role===small);}
   let audioContext=null;
   function prepareCueAudio(){try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;audioContext ||= new Audio();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});}catch{}}
   function beginCountdownCue(){
@@ -196,11 +199,11 @@
   let importing=false;
   $('setupForm').onsubmit=async event=>{
    event.preventDefault();if(importing)return;importing=true;const startButton=$('setupForm').querySelector('[type=submit]');startButton.disabled=true;startButton.textContent='正在识别…';const sources={workout:$('workoutUrl').value,entertainment:$('entertainmentUrl').value};const next={};let firstInvalid;
-   for(const role of Object.keys(ROLES)){try{$(role+'ShortFix').hidden=true;parseImport(sources[role]);next[role]=await parts.prepare(role,sources[role]);$(role+'Error').textContent='';}catch(error){next[role]=null;$(role+'Error').textContent=error.message;if(error.shortUrl){$(role+'ShortFix').hidden=false;$(role+'ShortLink').href=error.shortUrl;$(role+'ShortFix').dataset.shortUrl=error.shortOriginal||error.shortUrl;}}detect(role);$(role+'Url').setAttribute('aria-invalid',String(!next[role]));if(!next[role]&&!firstInvalid)firstInvalid=$(role+'Url');}
-   importing=false;startButton.disabled=false;startButton.textContent='开始';if(Object.keys(ROLES).some(role=>$(role+'Url').value!==sources[role])){$('workoutError').textContent='输入已改变，请再次点击开始。';return;}if(firstInvalid){firstInvalid.focus();return;}timer.cancel();save();sessionId=Date.now().toString(36)+Math.random().toString(36).slice(2,8);queues=next;indices={workout:0,entertainment:0};videos={workout:queues.workout[0],entertainment:queues.entertainment[0]};mainRole='entertainment';layout();$('setupView').hidden=true;$('sessionView').hidden=false;$('sessionMute').checked=$('setupMute').checked;$('combo').textContent=`${videos.workout.platform} × ${videos.entertainment.platform}`;
+   for(const role of Object.keys(ROLES)){if(role==='workout'&&$('noWorkout').checked){next.workout=[];continue;}try{$(role+'ShortFix').hidden=true;parseImport(sources[role]);next[role]=await parts.prepare(role,sources[role]);$(role+'Error').textContent='';}catch(error){next[role]=null;$(role+'Error').textContent=error.message;if(error.shortUrl){$(role+'ShortFix').hidden=false;$(role+'ShortLink').href=error.shortUrl;$(role+'ShortFix').dataset.shortUrl=error.shortOriginal||error.shortUrl;}}detect(role);$(role+'Url').setAttribute('aria-invalid',String(!next[role]));if(!next[role]&&!firstInvalid)firstInvalid=$(role+'Url');}
+   importing=false;startButton.disabled=false;startButton.textContent='开始';if(Object.keys(ROLES).some(role=>$(role+'Url').value!==sources[role])){$('workoutError').textContent='输入已改变，请再次点击开始。';return;}if(firstInvalid){firstInvalid.focus();return;}timer.cancel();save();sessionId=Date.now().toString(36)+Math.random().toString(36).slice(2,8);queues=next;indices={workout:0,entertainment:0};videos={workout:queues.workout[0],entertainment:queues.entertainment[0]};mainRole='entertainment';layout();$('setupView').hidden=true;$('sessionView').hidden=false;$('sessionMute').checked=$('setupMute').checked;$('combo').textContent=`${(videos.workout?.platform||'自主锻炼')} × ${videos.entertainment.platform}`;
    $('entertainmentVolumeRow').hidden=videos.entertainment.platform!=='YouTube';$('entertainmentVolume').disabled=true;
-   const hasBilibili=Object.values(videos).some(v=>v.platform==='Bilibili');$('platformHelp').hidden=!hasBilibili;$('playBoth').hidden=hasBilibili;$('pauseBoth').hidden=hasBilibili;$('manualPlaybackHint').hidden=!hasBilibili;$('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。':'';
-   document.dispatchEvent(new CustomEvent('cn:session-start',{detail:{workouts:queues.workout,sessionId}}));mount('entertainment');mount('workout');$('sessionStatus').textContent=Object.values(videos).some(v=>v.platform==='Bilibili')?'请在各播放器内分别开始或暂停。':'准备好后点击“同时播放”。';$('quickTimerSelect').focus({preventScroll:true});window.scrollTo(0,0);
+   const hasBilibili=Object.values(videos).some(v=>v?.platform==='Bilibili');$('platformHelp').hidden=!hasBilibili;$('playBoth').hidden=hasBilibili;$('pauseBoth').hidden=hasBilibili;$('playBoth').textContent=videos.workout?'▶ 同时播放':'▶ 播放';$('pauseBoth').textContent=videos.workout?'Ⅱ 全部暂停':'Ⅱ 暂停';$('manualPlaybackHint').hidden=!hasBilibili;$('bilibiliVolumeHint').textContent=videos.entertainment.platform==='Bilibili'?'娱乐音量请在B站播放器中调整。':'';
+   document.dispatchEvent(new CustomEvent('cn:session-start',{detail:{workouts:queues.workout,sessionId,manualWorkout:!videos.workout}}));mount('entertainment');if(videos.workout)mount('workout');else document.dispatchEvent(new CustomEvent('cn:before-player-change',{detail:{role:'workout'}}));$('sessionStatus').textContent=Object.values(videos).some(v=>v?.platform==='Bilibili')?(videos.workout?'请在各播放器内分别开始或暂停。':'请在B站播放器中点播放。'):videos.workout?'准备好后点击“同时播放”。':'点击“播放”开始，也可直接点播放器。';$('quickTimerSelect').focus({preventScroll:true});window.scrollTo(0,0);
   };
   function transport(action){if(action==='pause')document.dispatchEvent(new CustomEvent('cn:pause-all'));const bili=[],waiting=[];for(const [role,adapter] of Object.entries(adapters)){
    const cap=action==='play'?'canPlayProgrammatically':'canPauseProgrammatically';
@@ -215,7 +218,7 @@
 
   function sizePip(){
    const stage=$('stage'),workspace=$('playerWorkspace'),split=stage.classList.contains('split-stage'),side=split&&$('splitPosition').value.startsWith('side-');workspace.classList.toggle('side-workspace',side);
-   const available=workspace.clientWidth;if(!available)return;const portrait=matchMedia('(max-width:600px) and (orientation:portrait)').matches;
+   const available=workspace.clientWidth;if(!available||!videos.workout)return;const portrait=matchMedia('(max-width:600px) and (orientation:portrait)').matches;
    const minimum=portrait?Math.min(280,available-20):204,requested=pipAdjusted?Number($('pipSize').value):portrait?Math.max(280,available*.78):Number($('pipSize').value),width=Math.max(minimum,Math.min(requested,side?Math.max(minimum,available-220):available-20)),height=Math.max(portrait?242:238,width*.5625+36);
    if(!split)stage.style.setProperty('--pip-width',width+'px');
    stage.style.setProperty('--split-width',width+'px');stage.style.setProperty('--pip-height',height+'px');workspace.style.setProperty('--secondary-height',height+'px');workspace.style.setProperty('--primary-height',$('mainHeight').value+'px');
@@ -231,7 +234,7 @@
   }
   function immersive(active){
    const stage=$('stage');if(active&&!stage.classList.contains('split-stage')){$('mainWidth').value='100';stage.style.setProperty('--main-width','100%');$('mainHeight').value=Math.round(stage.getBoundingClientRect().height);stage.style.setProperty('--main-height',stage.getBoundingClientRect().height+'px');}
-   stage.classList.toggle('split-stage',active);$('splitSettings').hidden=!active;$('position').closest('label').hidden=active;$('immerse').setAttribute('aria-pressed',String(active));$('immerse').textContent=active?'浮窗模式':'分屏';sizePip();
+   stage.classList.toggle('split-stage',active);$('splitSettings').hidden=!active;$('position').closest('label').hidden=active||!videos.workout;$('immerse').setAttribute('aria-pressed',String(active));$('immerse').textContent=active?'浮窗模式':'分屏';sizePip();
   }
   $('immerse').onclick=()=>immersive(!$('stage').classList.contains('split-stage'));
   $('mainWidth').oninput=sizePip;
