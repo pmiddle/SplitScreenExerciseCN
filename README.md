@@ -1,3 +1,11 @@
+# 当前版本：一个 MOVE/MIX，中文 Bilibili / English YouTube
+
+已在现有v4中合并双版本入口，共享当前界面、计时器、队列、收藏与运动记录。英文推荐来自旧YouTube工作台的11条已有视频，原项目未修改。首次选择版本，之后可从顶部“中文 / English”切换。
+
+**部署须上传整个运行目录**：index.html、styles.css、所有同目录 .js（含新增 experience.js、i18n.js、youtube-workouts.js）及原域名 CNAME。不能只上传HTML。没有生成ZIP，没有修改DNS或部署分支，GitHub由用户上传。
+
+详见 [双版本合并验证](双版本合并验证.md)，包含数据保留、迁移范围、平台限制、文件清单和实际测试结果。新增检查：`node tests/experiences.cjs`。下方为历史版本说明。
+
 # 当前v4目录的直接修改版
 
 本次直接修改此解压目录，**没有生成或更新任何ZIP**。旧move-mix-cn-v4.zip不包含本次运动记录与索引修改。请使用当前目录中的文件；部署时复制整个目录，包含新增的 records.js 与 records-ui.js。
@@ -33,7 +41,7 @@ python -m http.server 8766
 ## 独立部署 GitHub Pages
 
 1. 新建单独的 GitHub 仓库，例如 move-mix-cn。不要使用两个旧项目的仓库。
-2. 将 index.html、styles.css、app.js、README.md 上传到新仓库根目录。tests 文件夹可一并上传，运行网站不依赖它。
+2. 将 index.html、styles.css、所有同目录 .js 及原 CNAME 上传到现有仓库根目录。tests 文件夹可一并上传，运行网站不依赖它。
 3. 在这个新仓库的 Settings → Pages 选择 Deploy from a branch，main 分支，根目录。
 4. 使用 GitHub 显示的新 Pages 地址。三个项目可以同时保留。
 

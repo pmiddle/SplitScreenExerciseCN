@@ -1,5 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.MoveMixParts=api;})(typeof window==='undefined'?this:window,function(){
  'use strict';
+ const t=value=>typeof window!=='undefined'&&window.MoveMixI18n?window.MoveMixI18n.t(value):value;
+ const storageKey=key=>typeof window!=='undefined'&&window.MoveMixExperience?window.MoveMixExperience.storageKey(key):key;
  const endpoints=['https://api.bilibili.com/x/web-interface/view','https://api.bilibili.com/x/player/pagelist'];
  function validPage(value){return /^\d+$/.test(String(value))&&Number.isSafeInteger(Number(value))&&Number(value)>0;}
  function readMetadata(body){
@@ -40,7 +42,7 @@
   if(!validPage(page))throw Error('请输入大于0的分P整数编号。');
   const p=Number(page),part=video.pages?.find(item=>item.page===p),next={...video,p};
   next.sourceKey=core.sourceKey(next);
-  if(video.videoTitle)next.title=video.videoTitle+(video.pages.length>1?' · '+(part?.title||'P'+p):'');else{next.baseTitle=video.baseTitle||video.title||video.id;next.title=next.baseTitle+' · P'+p;}
+  if(video.videoTitle)next.title=t(video.videoTitle+(video.pages.length>1?' · '+(part?.title||'P'+p):''));else{next.baseTitle=video.baseTitle||video.title||video.id;next.title=t(next.baseTitle+' · P'+p);}
   return next;
  }
  function parsePages(text){
@@ -71,9 +73,9 @@
   if(!queue.length)throw Error('请选择至少一个视频或分P。');return queue;
  }
  function createController(core){
-  const $=id=>document.getElementById(id),load=createLoader(),states={},savedKey='move-mix-cn:parts:v1';let saved={};
+  const $=id=>document.getElementById(id),load=createLoader(),states={},savedKey=storageKey('move-mix-cn:parts:v1');let saved={};
   try{saved=JSON.parse(localStorage.getItem(savedKey)||'{}')||{};}catch{}
-  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e;};
+  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=t(text);return e;};
   function persist(){saved=Object.fromEntries(Object.entries(states).map(([role,state])=>[role,{input:state.input,selections:state.entries.map(e=>e.selectedPages)}]));try{localStorage.setItem(savedKey,JSON.stringify(saved));}catch{}}
   function render(role){
    const state=states[role],host=$(role+'Parts');host.replaceChildren();if(!state)return;
@@ -85,15 +87,15 @@
     if(video.metadataStatus==='loading'){box.append(node('small','正在准备分P…'));host.append(box);return;}
     if(video.pages?.length===1&&entry.selectedPages.length===1&&entry.selectedPages[0]===video.pages[0].page)return;
     const heading=node('p','想看哪些分P？'),error=node('small'),summary=node('small');error.className='error';error.setAttribute('role','status');
-    const report=()=>{summary.textContent=entry.selectedPages.length?'已选 '+entry.selectedPages.map(p=>'P'+p).join('、'):'';};report();box.append(heading);
+    const report=()=>{summary.textContent=t(entry.selectedPages.length?'已选 '+entry.selectedPages.map(p=>'P'+p).join('、'):'');};report();box.append(heading);
     if(video.pages?.length){
-     const list=node('div');list.className='part-checklist';list.setAttribute('role','group');list.setAttribute('aria-label',label+'分P');
+     const list=node('div');list.className='part-checklist';list.setAttribute('role','group');list.setAttribute('aria-label',t(label+'分P'));
      // Include an explicit URL page even if the endpoint omitted it.
      const options=[...video.pages];for(const p of entry.selectedPages)if(!options.some(x=>x.page===p))options.push({page:p,title:''});options.sort((a,b)=>a.page-b.page);
-     for(const part of options){const row=node('label'),check=node('input');check.type='checkbox';check.value=String(part.page);check.checked=entry.selectedPages.includes(part.page);check.setAttribute('aria-label',label+' P'+part.page);check.onchange=()=>{entry.selectedPages=check.checked?[...new Set([...entry.selectedPages,part.page])].sort((a,b)=>a-b):entry.selectedPages.filter(p=>p!==part.page);entry.draft=entry.selectedPages.join(',');persist();report();};row.append(check,node('span','P'+part.page+(part.title?' · '+part.title:'')));list.append(row);}box.append(list);
-     const all=node('button','全选');all.type='button';all.onclick=()=>{try{entry.selectedPages=parsePages(options.map(p=>p.page).join(','));entry.draft=entry.selectedPages.join(',');persist();render(role);}catch(e){error.textContent=e.message;}};box.append(all);
+     for(const part of options){const row=node('label'),check=node('input');check.type='checkbox';check.value=String(part.page);check.checked=entry.selectedPages.includes(part.page);check.setAttribute('aria-label',t(label+' P'+part.page));check.onchange=()=>{entry.selectedPages=check.checked?[...new Set([...entry.selectedPages,part.page])].sort((a,b)=>a-b):entry.selectedPages.filter(p=>p!==part.page);entry.draft=entry.selectedPages.join(',');persist();report();};row.append(check,node('span','P'+part.page+(part.title?' · '+part.title:'')));list.append(row);}box.append(list);
+     const all=node('button','全选');all.type='button';all.onclick=()=>{try{entry.selectedPages=parsePages(options.map(p=>p.page).join(','));entry.draft=entry.selectedPages.join(',');persist();render(role);}catch(e){error.textContent=t(e.message);}};box.append(all);
     }else{
-     const wrapper=node('label'),field=node('input');field.type='text';field.placeholder='例如：1,2,3 或 1~3';field.value=entry.draft;field.setAttribute('aria-label',label+'想看的分P');field.oninput=()=>{entry.draft=field.value;try{entry.selectedPages=parsePages(entry.draft);expandQueue(core,state.entries);persist();report();error.textContent='';}catch(e){summary.textContent='';error.textContent=entry.draft.trim()?e.message:'';}};wrapper.append(field);box.append(wrapper,node('small','可一次选择多个'));
+     const wrapper=node('label'),field=node('input');field.type='text';field.placeholder='例如：1,2,3 或 1~3';field.value=entry.draft;field.setAttribute('aria-label',t(label+'想看的分P'));field.oninput=()=>{entry.draft=field.value;try{entry.selectedPages=parsePages(entry.draft);expandQueue(core,state.entries);persist();report();error.textContent=t('');}catch(e){summary.textContent=t('');error.textContent=t(entry.draft.trim()?e.message:'');}};wrapper.append(field);box.append(wrapper,node('small','可一次选择多个'));
     }
     box.append(summary,error);host.append(box);
    });
