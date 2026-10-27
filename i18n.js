@@ -2,6 +2,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.MoveMixI18n=api;})(typeof window==='undefined'?this:window,function(){
 'use strict';
 const messages={
+ "知道了，开始使用":"Got it — let’s start",
  "锻炼": "Workout",
  "娱乐": "Entertainment",
  "全身": "Full body",

@@ -25,8 +25,8 @@ let hasSelection=!!selected;
 function open(){ $('experienceCancel').hidden=!hasSelection;dialog.showModal(); }
 function choose(next){
  try{localStorage.setItem(PREFERENCE,next);}catch{}
- if(next===mode){hasSelection=true;const url=new URL(location.href);url.searchParams.set('mode',next);history.replaceState(null,'',url);dialog.close();switcher.focus();}
- else{const url=new URL(location.href);url.searchParams.set('mode',next);url.hash='';location.assign(url.href);}
+ if(next===mode){hasSelection=true;const url=new URL(location.href);url.searchParams.set('mode',next);history.replaceState(null,'',url);dialog.close();openGuide();}
+ else{const url=new URL(location.href);url.searchParams.set('mode',next);url.searchParams.set('guide','1');url.hash='';location.assign(url.href);}
 }
 for(const button of dialog.querySelectorAll('[data-mode]'))button.onclick=()=>choose(button.dataset.mode);
 const home=new URL(location.href);home.searchParams.set('mode',mode);home.hash='';document.querySelector('header a.logo').href=home.href;
@@ -34,6 +34,7 @@ switcher.onclick=open;$('experienceCancel').onclick=()=>dialog.close();dialog.ad
 if(mode==='youtube-en'){
  document.documentElement.lang='en';document.title='MOVE/MIX — Move your body. Make it your mix.';
  document.querySelector('meta[name=description]').content='Pair your workout with what you love on YouTube. Queues, favorites, timers and activity history in one MOVE/MIX.';
+ for(const el of document.querySelectorAll('[data-cn-only]'))el.hidden=true;
  window.MoveMixI18n.localizeDOM(document.body);
  document.querySelector('.edition').textContent='English · YouTube';
  // Bilibili-specific recovery instructions are not part of the YouTube experience.
@@ -46,5 +47,16 @@ if(mode==='youtube-en'){
 // Platform follows the experience; users choose purpose and body area, not arbitrary platform pairs.
 $('favoritePlatformFilter').value=expectedPlatform;$('favoritePlatformFilter').closest('label').hidden=true;
 switcher.textContent=mode==='youtube-en'?'中文 / English':'中文 / English';
-if(!selected)open();
+// The inline guide is the single content source for both the page and the modal.
+const guideDialog=$('guideDialog');
+function openGuide(){
+ const content=$('guideSection').querySelector('.guide-content');
+ $('guideDialogContent').replaceChildren(content.cloneNode(true));
+ if(!guideDialog.open)guideDialog.showModal();
+}
+$('closeGuide').onclick=()=>guideDialog.close();
+for(const link of document.querySelectorAll('.section-index a[href="#guideSection"]'))link.addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();openGuide();});
+const showGuide=params.get('guide')==='1';
+if(showGuide){const clean=new URL(location.href);clean.searchParams.delete('guide');history.replaceState(null,'',clean);}
+if(!selected)open();else if(showGuide)openGuide();
 })();
